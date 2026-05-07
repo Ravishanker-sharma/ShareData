@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec.bak
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyInstaller output
+dist/
+build/
+*.spec.bak
+
+# Cloudflared binaries (downloaded at build time by CI)
+cloudflared-darwin-amd64
+cloudflared-darwin-arm64
+cloudflared-linux-amd64
+cloudflared-windows-amd64.exe
+
+# ShareData runtime files
+*.sharedata
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
