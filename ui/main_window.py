@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -59,7 +58,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ShareData")
-        self.setMinimumSize(480, 620)
+        self.setFixedWidth(500)
+        self.setMinimumHeight(620)
         self.resize(500, 720)
         self.setStyleSheet(APP_STYLE)
         self._build_ui()
@@ -109,18 +109,7 @@ class MainWindow(QMainWindow):
         tw.addWidget(self._toggle)
         outer.addWidget(toggle_wrapper)
 
-        # ── Separator ─────────────────────────────────────────
-        sep = QWidget()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #ffffff08;")
-        outer.addWidget(sep)
-
         # ── Content ───────────────────────────────────────────
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(scroll.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
         content_host = QWidget()
         content_host.setStyleSheet("background-color: #0a0a14;")
         cl = QVBoxLayout(content_host)
@@ -129,6 +118,7 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._stack.setStyleSheet("background: transparent;")
+        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self._sender_panel = SenderPanel()
         self._receiver_panel = ReceiverPanel()
@@ -136,8 +126,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._receiver_panel)
 
         cl.addWidget(self._stack)
-        scroll.setWidget(content_host)
-        outer.addWidget(scroll, stretch=1)
+        outer.addWidget(content_host, stretch=1)
 
     def _switch(self, index: int):
         self._stack.setCurrentIndex(index)
