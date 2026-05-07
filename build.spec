@@ -89,7 +89,7 @@ if system == "Darwin":
     app = BUNDLE(
         exe,
         name="ShareData.app",
-        icon=None,
+        icon="assets/icon.icns",
         bundle_identifier="com.sharedata.app",
         info_plist={
             "NSHighResolutionCapable": True,

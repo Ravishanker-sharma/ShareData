@@ -24,14 +24,10 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Generate icons
-        run: python create_icon.py
-
       - name: Download cloudflared
         run: |
           curl -L -o cloudflared-windows-amd64.exe `
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-          if (!(Test-Path cloudflared-windows-amd64.exe)) { exit 1 }
 
       - name: Build
         run: pyinstaller build.spec --clean --noconfirm
@@ -43,9 +39,9 @@ jobs:
           path: dist/ShareData.exe
           retention-days: 30
 
-  # ── macOS (Apple Silicon) ─────────────────────────────────────────────────
+  # ── macOS (Apple Silicon + Intel) ────────────────────────────────────────
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-latest        # Apple Silicon (M-series) runner
 
     steps:
       - uses: actions/checkout@v4
@@ -60,22 +56,19 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Generate icons
-        run: python create_icon.py
-
       - name: Download cloudflared
         run: |
-          curl -L -o cloudflared-darwin-arm64.tgz \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz
-          tar -xzf cloudflared-darwin-arm64.tgz
-          mv cloudflared cloudflared-darwin-arm64
+          curl -L -o cloudflared-darwin-arm64 \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64
           chmod +x cloudflared-darwin-arm64
 
       - name: Build
         run: pyinstaller build.spec --clean --noconfirm
 
       - name: Zip the .app bundle
-        run: cd dist && zip -r ShareData-macOS.zip ShareData.app
+        run: |
+          cd dist
+          zip -r ShareData-macOS.zip ShareData.app
 
       - name: Upload
         uses: actions/upload-artifact@v4

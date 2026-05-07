@@ -21,18 +21,15 @@ def _binary_name() -> str:
     return "cloudflared.exe" if platform.system() == "Windows" else "cloudflared"
 
 
-def _download_cloudflared(dest: str, status_cb: Optional[Callable[[str], None]]) -> None:
-    """Download cloudflared using httpx (handles GitHub redirects reliably)."""
-    import httpx
-    import tarfile
+def _download_cloudflared(dest: str, status_cb) -> None:
+    import httpx, tarfile
 
     system  = platform.system().lower()
     machine = platform.machine().lower()
 
-    # macOS binaries are .tgz archives; Windows/Linux are plain binaries
     if system == "darwin":
-        arch  = "arm64" if "arm" in machine else "amd64"
-        fname = f"cloudflared-darwin-{arch}.tgz"
+        arch   = "arm64" if "arm" in machine else "amd64"
+        fname  = f"cloudflared-darwin-{arch}.tgz"
         is_tgz = True
     elif system == "windows":
         fname  = "cloudflared-windows-amd64.exe"
@@ -44,13 +41,13 @@ def _download_cloudflared(dest: str, status_cb: Optional[Callable[[str], None]])
     url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/{fname}"
 
     if status_cb:
-        status_cb("Downloading cloudflared (~30 MB, one-time setup)…")
+        status_cb("Downloading cloudflared (~30 MB, one-time setup)...")
 
     tmp = dest + (".tgz" if is_tgz else ".tmp")
     with httpx.Client(follow_redirects=True, timeout=120.0) as client:
         with client.stream("GET", url) as resp:
             resp.raise_for_status()
-            total      = int(resp.headers.get("content-length", 0))
+            total = int(resp.headers.get("content-length", 0))
             downloaded = 0
             with open(tmp, "wb") as f:
                 for chunk in resp.iter_bytes(chunk_size=65536):
@@ -58,13 +55,12 @@ def _download_cloudflared(dest: str, status_cb: Optional[Callable[[str], None]])
                     downloaded += len(chunk)
                     if status_cb and total:
                         pct = int(downloaded * 100 / total)
-                        status_cb(f"Downloading cloudflared… {pct}%")
+                        status_cb(f"Downloading cloudflared... {pct}%")
 
     if is_tgz:
         if status_cb:
-            status_cb("Extracting cloudflared…")
+            status_cb("Extracting cloudflared...")
         with tarfile.open(tmp, "r:gz") as tar:
-            # The archive contains a single binary named "cloudflared"
             member = next(
                 (m for m in tar.getmembers() if m.name.endswith("cloudflared") and m.isfile()),
                 None,
@@ -82,43 +78,31 @@ def _download_cloudflared(dest: str, status_cb: Optional[Callable[[str], None]])
         os.chmod(dest, current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def get_cloudflared(status_cb: Optional[Callable[[str], None]] = None) -> str:
-    """Return path to cloudflared binary, downloading it on first run."""
-    # 1. Already in PATH (e.g. Homebrew install)
+def get_cloudflared(status_cb=None) -> str:
     found = shutil.which("cloudflared")
     if found:
         return found
 
-    # 2. Previously downloaded to our cache dir
     cache_path = os.path.join(_app_bin_dir(), _binary_name())
     if os.path.exists(cache_path) and os.path.getsize(cache_path) > 1_000_000:
         return cache_path
 
-    # 3. Download it
     _download_cloudflared(cache_path, status_cb)
     return cache_path
 
 
 class TunnelManager:
     def __init__(self):
-        self._process: Optional[subprocess.Popen] = None
-        self._thread:  Optional[threading.Thread] = None
-        self.tunnel_url: Optional[str] = None
+        self._process = None
+        self._thread  = None
+        self.tunnel_url = None
 
-    def start(
-        self,
-        port: int,
-        url_cb:    Callable[[str], None],
-        error_cb:  Callable[[str], None],
-        status_cb: Optional[Callable[[str], None]] = None,
-    ) -> None:
-
+    def start(self, port, url_cb, error_cb, status_cb=None):
         def run():
             try:
                 binary = get_cloudflared(status_cb)
-
                 if status_cb:
-                    status_cb("Starting tunnel…")
+                    status_cb("Starting tunnel...")
 
                 self._process = subprocess.Popen(
                     [binary, "tunnel", "--url", f"http://localhost:{port}"],
@@ -136,7 +120,6 @@ class TunnelManager:
                         url_cb(self.tunnel_url)
                         url_found = True
                         break
-                    # Surface cloudflared errors early
                     if "error" in line.lower() and status_cb:
                         status_cb(f"cloudflared: {line.strip()}")
 
@@ -144,7 +127,6 @@ class TunnelManager:
                     error_cb("Tunnel closed before a URL was assigned. Check your internet connection.")
                     return
 
-                # Keep process alive — drain remaining output silently
                 for _ in self._process.stdout:
                     pass
                 self._process.wait()
@@ -157,7 +139,7 @@ class TunnelManager:
         self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self):
         if self._process:
             try:
                 self._process.terminate()
