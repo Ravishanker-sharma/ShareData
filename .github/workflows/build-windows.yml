@@ -1,0 +1,40 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download cloudflared for bundling
+        run: |
+          curl -L -o cloudflared-windows-amd64.exe `
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+
+      - name: Build with PyInstaller
+        run: pyinstaller build.spec --clean --noconfirm
+
+      - name: Upload .exe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShareData-Windows
+          path: dist/ShareData.exe
+          retention-days: 30
