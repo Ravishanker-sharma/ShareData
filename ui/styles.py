@@ -14,7 +14,6 @@ QWidget {
 /* ══ Header ════════════════════════════════════════════════════════════════ */
 QWidget#header {
     background-color: #0a0a14;
-    border-bottom: 1px solid #ffffff0a;
 }
 QLabel#appTitle {
     color: #ffffff;

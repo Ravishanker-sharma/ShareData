@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -142,6 +143,7 @@ class ReceiverPanel(QWidget):
         self._dl_icon.setStyleSheet("font-size: 22px; background: transparent;")
         self._dl_fname = QLabel("Connecting…")
         self._dl_fname.setObjectName("fileNameLabel")
+        self._dl_fname.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         name_row.addWidget(self._dl_icon)
         name_row.addWidget(self._dl_fname, stretch=1)
 
@@ -159,6 +161,9 @@ class ReceiverPanel(QWidget):
         self._speed_badge    = StatBadge("↓", "—", color="#6c63ff")
         self._size_badge     = StatBadge("📁", "—", color="#22c6a5")
         self._eta_badge      = StatBadge("⏱", "—", color="#f59e0b")
+        self._speed_badge.setFixedWidth(110)
+        self._size_badge.setFixedWidth(150)
+        self._eta_badge.setFixedWidth(90)
         badges_row.addStretch()
         badges_row.addWidget(self._speed_badge)
         badges_row.addWidget(self._size_badge)
