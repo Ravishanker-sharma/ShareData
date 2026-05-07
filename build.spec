@@ -81,7 +81,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="assets/icon.icns",  # Uncomment and add icon file if desired
+    icon="assets/icon.ico" if system == "Windows" else "assets/icon.icns",
 )
 
 # macOS .app bundle

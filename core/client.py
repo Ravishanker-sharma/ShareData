@@ -46,9 +46,27 @@ class DownloadClient:
 
         try:
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                resp = await client.get(f"{tunnel_url}/info")
-                resp.raise_for_status()
-                info = resp.json()
+                # Retry /info up to 5 times — tunnel may take a moment to route
+                info = None
+                last_error = ""
+                for attempt in range(5):
+                    try:
+                        resp = await client.get(f"{tunnel_url}/info")
+                        if resp.status_code == 404:
+                            last_error = "Sender is not sharing a file yet. Make sure they clicked 'Start Sharing' first."
+                            await asyncio.sleep(2)
+                            continue
+                        resp.raise_for_status()
+                        info = resp.json()
+                        break
+                    except Exception as e:
+                        last_error = str(e)
+                        if attempt < 4:
+                            await asyncio.sleep(3)
+
+                if info is None:
+                    done_cb(False, last_error or "Could not reach sender. Check the link and try again.")
+                    return
 
                 file_name: str = info["file_name"]
                 file_size: int = info["file_size"]
