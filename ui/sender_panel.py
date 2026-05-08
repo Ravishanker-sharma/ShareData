@@ -4,7 +4,7 @@ import time
 
 import qrcode
 from PIL import Image
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QRectF
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QRectF, QSettings
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap, QPainter, QColor, QLinearGradient
 from PyQt6.QtWidgets import (
     QApplication,
@@ -18,9 +18,18 @@ from PyQt6.QtWidgets import (
     QWidget,
     QLineEdit,
     QGraphicsDropShadowEffect,
+    QScrollArea,
 )
 
 from core.chunker import human_size
+
+
+def _add_shadow(widget, color: str = "#6c63ff", blur: int = 18, offset: int = 3):
+    shadow = QGraphicsDropShadowEffect(widget)
+    shadow.setBlurRadius(blur)
+    shadow.setOffset(0, offset)
+    shadow.setColor(QColor(color))
+    widget.setGraphicsEffect(shadow)
 from core.server import file_server
 from core.tunnel import tunnel_manager
 from ui.widgets import SpinnerWidget, StatBadge
@@ -60,7 +69,7 @@ def _make_qr_pixmap(url: str, size: int = 160) -> QPixmap:
 # ── Drop Zone ──────────────────────────────────────────────────────────────
 
 class DropZone(QFrame):
-    file_dropped = pyqtSignal(str)
+    files_dropped = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,7 +86,7 @@ class DropZone(QFrame):
         self._icon_lbl.setObjectName("dropIcon")
         self._icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._hint = QLabel("Drop your file here")
+        self._hint = QLabel("Drop your files here")
         self._hint.setObjectName("dropHint")
         self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -89,10 +98,10 @@ class DropZone(QFrame):
         layout.addWidget(self._hint)
         layout.addWidget(self._sub)
 
+    clicked = pyqtSignal()
+
     def mousePressEvent(self, event):
-        path, _ = QFileDialog.getOpenFileName(self, "Select file to share")
-        if path:
-            self.file_dropped.emit(path)
+        self.clicked.emit()
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -111,10 +120,9 @@ class DropZone(QFrame):
         self.setStyleSheet("")
         self._icon_lbl.setText("📂")
         urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if os.path.isfile(path):
-                self.file_dropped.emit(path)
+        paths = [u.toLocalFile() for u in urls if os.path.isfile(u.toLocalFile())]
+        if paths:
+            self.files_dropped.emit(paths)
 
 
 # ── Tunnel Worker ──────────────────────────────────────────────────────────
@@ -178,13 +186,14 @@ class LoadingCard(QFrame):
 class SenderPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._file_path = ""
+        self._files: list[str] = []
         self._sharing = False
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(900)
         self._stats_timer.timeout.connect(self._update_stats)
         self._session_start = 0.0
         self._tunnel_worker: TunnelWorker | None = None
+        self._settings = QSettings("ShareData", "ShareData")
         self._build_ui()
 
     # ── Build ──────────────────────────────────────────────────────────────
@@ -196,13 +205,14 @@ class SenderPanel(QWidget):
 
         # Drop zone
         self._drop_zone = DropZone()
-        self._drop_zone.file_dropped.connect(self._on_file_chosen)
+        self._drop_zone.files_dropped.connect(self._on_files_chosen)
+        self._drop_zone.clicked.connect(self._browse_files)
         root.addWidget(self._drop_zone)
 
-        # File card (hidden initially)
-        self._file_card = self._build_file_card()
-        self._file_card.hide()
-        root.addWidget(self._file_card)
+        # File list card (hidden initially)
+        self._file_list_card = self._build_file_list_card()
+        self._file_list_card.hide()
+        root.addWidget(self._file_list_card)
 
         # Loading card (hidden initially)
         self._loading_card = LoadingCard()
@@ -215,9 +225,17 @@ class SenderPanel(QWidget):
         root.addWidget(self._share_card)
 
         # Primary action button
-        self._action_btn = QPushButton("🚀   Start Sharing")
+        self._action_btn = QPushButton("⬆  Share File")
         self._action_btn.setObjectName("actionBtn")
         self._action_btn.setEnabled(False)
+        self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._action_btn.setStyleSheet(
+            "QPushButton { background-color: #6c63ff; color: #ffffff; border: 1.5px solid #8b5cf6;"
+            " border-radius: 12px; padding: 12px 28px; font-size: 14px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #7c73ff; }"
+            "QPushButton:pressed { background-color: #5a52e0; }"
+            "QPushButton:disabled { background-color: #1e1e30; color: #3a3a60; border-color: #2a2a45; }"
+        )
         self._action_btn.clicked.connect(self._toggle_sharing)
         root.addWidget(self._action_btn)
 
@@ -230,129 +248,184 @@ class SenderPanel(QWidget):
 
         root.addStretch()
 
-    def _build_file_card(self) -> QFrame:
+    def _build_file_list_card(self) -> QFrame:
         card = QFrame()
         card.setObjectName("card")
-        lay = QHBoxLayout(card)
-        lay.setContentsMargins(18, 14, 18, 14)
-        lay.setSpacing(14)
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(8)
 
-        self._ftype_icon = QLabel("📄")
-        self._ftype_icon.setStyleSheet("font-size: 30px; background: transparent;")
-        self._ftype_icon.setFixedWidth(36)
+        self._file_rows_layout = QVBoxLayout()
+        self._file_rows_layout.setSpacing(6)
+        outer.addLayout(self._file_rows_layout)
 
-        info = QVBoxLayout()
-        info.setSpacing(3)
-        self._fname_lbl = QLabel()
-        self._fname_lbl.setObjectName("fileNameLabel")
-        self._fname_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self._fsize_lbl = QLabel()
-        self._fsize_lbl.setObjectName("fileSizeLabel")
-        info.addWidget(self._fname_lbl)
-        info.addWidget(self._fsize_lbl)
-
-        change_btn = QPushButton("Change")
-        change_btn.setObjectName("secondaryBtn")
-        change_btn.setFixedWidth(78)
-        change_btn.clicked.connect(self._change_file)
-
-        lay.addWidget(self._ftype_icon)
-        lay.addLayout(info, stretch=1)
-        lay.addWidget(change_btn)
+        add_btn = QPushButton("＋  Add more files")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet(
+            "QPushButton { background-color: #1a1a28; color: #8080b0; border: 1.5px solid #ffffff12;"
+            " border-radius: 10px; padding: 9px 18px; font-size: 13px; font-weight: 500; }"
+            "QPushButton:hover { border-color: #6c63ff60; color: #c0c0e8; background-color: #1e1e32; }"
+        )
+        add_btn.clicked.connect(self._add_more_files)
+        outer.addWidget(add_btn)
         return card
+
+    def _add_file_row(self, path: str):
+        row = QFrame()
+        row.setObjectName("card")
+        row_lay = QHBoxLayout(row)
+        row_lay.setContentsMargins(10, 8, 10, 8)
+        row_lay.setSpacing(10)
+
+        icon_lbl = QLabel(_file_icon(path))
+        icon_lbl.setStyleSheet("font-size: 22px; background: transparent;")
+        icon_lbl.setFixedWidth(28)
+
+        fname_lbl = QLabel(os.path.basename(path))
+        fname_lbl.setObjectName("fileNameLabel")
+        fname_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+        size_lbl = QLabel(human_size(os.path.getsize(path)))
+        size_lbl.setObjectName("fileSizeLabel")
+        size_lbl.setFixedWidth(60)
+        size_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        remove_btn = QPushButton("✕")
+        remove_btn.setFixedSize(26, 26)
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setStyleSheet(
+            "QPushButton { background-color: #1e1224; color: #e060a0; border: 1.5px solid #e060a070;"
+            " border-radius: 6px; font-size: 12px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #2a1530; border-color: #e060a0; color: #ff80c0; }"
+        )
+        remove_btn.clicked.connect(lambda: self._remove_file(path, row))
+
+        row_lay.addWidget(icon_lbl)
+        row_lay.addWidget(fname_lbl, stretch=1)
+        row_lay.addWidget(size_lbl)
+        row_lay.addWidget(remove_btn)
+        self._file_rows_layout.addWidget(row)
+
+    def _remove_file(self, path: str, row: QFrame):
+        if path in self._files:
+            self._files.remove(path)
+        row.setParent(None)
+        row.deleteLater()
+        if not self._files:
+            self._file_list_card.hide()
+            self._drop_zone.show()
+            self._action_btn.setEnabled(False)
+            self._action_btn.setText("⬆  Share File")
+        else:
+            self._action_btn.setText("⬆  Share Files" if len(self._files) > 1 else "⬆  Share File")
 
     def _build_share_card(self) -> QFrame:
         card = QFrame()
         card.setObjectName("liveCard")
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(20, 18, 20, 18)
-        lay.setSpacing(14)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(10)
 
-        # Live badge row
-        badge_row = QHBoxLayout()
-        live_dot = QLabel("⬤  LIVE")
-        live_dot.setObjectName("liveDot")
-        badge_row.addWidget(live_dot)
-        badge_row.addStretch()
-
-        # URL row
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
+
+        live_dot = QLabel("⬤")
+        live_dot.setObjectName("liveDot")
+        live_dot.setFixedWidth(16)
+
         self._url_edit = QLineEdit()
         self._url_edit.setReadOnly(True)
         self._url_edit.setPlaceholderText("Generating link…")
+        self._url_edit.setCursor(Qt.CursorShape.IBeamCursor)
+        self._url_edit.setTextMargins(4, 0, 4, 0)
+
         self._copy_btn = QPushButton("Copy Link")
         self._copy_btn.setObjectName("copyBtn")
-        self._copy_btn.setFixedWidth(94)
+        self._copy_btn.setFixedWidth(100)
+        self._copy_btn.setStyleSheet(
+            "QPushButton { background-color: #1a1a28; color: #6c63ff; border: 1.5px solid #6c63ff40;"
+            " border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #20203a; border-color: #6c63ff; }"
+        )
         self._copy_btn.clicked.connect(self._copy_url)
+
+        url_row.addWidget(live_dot)
         url_row.addWidget(self._url_edit, stretch=1)
         url_row.addWidget(self._copy_btn)
 
-        hint = QLabel("Share this link with the receiver")
-        hint.setObjectName("qrHint")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_row = QHBoxLayout()
+        content_row.setSpacing(14)
 
-        # QR code in a centered frame
         qr_frame = QFrame()
         qr_frame.setObjectName("card")
-        qr_frame.setFixedSize(184, 184)
+        qr_frame.setFixedSize(148, 148)
         qr_lay = QVBoxLayout(qr_frame)
-        qr_lay.setContentsMargins(8, 8, 8, 8)
+        qr_lay.setContentsMargins(6, 6, 6, 6)
         self._qr_lbl = QLabel()
         self._qr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         qr_lay.addWidget(self._qr_lbl)
 
-        qr_row = QHBoxLayout()
-        qr_row.addStretch()
-        qr_row.addWidget(qr_frame)
-        qr_row.addStretch()
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
 
-        # Stats badges
-        stats_row = QHBoxLayout()
-        stats_row.setSpacing(8)
-        self._speed_badge = StatBadge("↑", "—  MB/s", color="#6c63ff")
+        hint = QLabel("Share link or scan QR")
+        hint.setObjectName("qrHint")
+        hint.setWordWrap(True)
+
+        self._speed_badge = StatBadge("↑", "— MB/s", color="#6c63ff")
         self._sent_badge  = StatBadge("📤", "—", color="#22c6a5")
-        self._speed_badge.setFixedWidth(130)
-        self._sent_badge.setFixedWidth(130)
-        stats_row.addStretch()
-        stats_row.addWidget(self._speed_badge)
-        stats_row.addWidget(self._sent_badge)
-        stats_row.addStretch()
+        self._speed_badge.setFixedHeight(30)
+        self._sent_badge.setFixedHeight(30)
 
-        # Stop button
-        self._stop_btn = QPushButton("⏹   Stop Sharing")
+        self._stop_btn = QPushButton("Stop Sharing")
         self._stop_btn.setObjectName("stopBtn")
+        self._stop_btn.setStyleSheet(
+            "QPushButton { background-color: #1e1224; color: #e060a0; border: 1.5px solid #e060a070;"
+            " border-radius: 12px; padding: 12px 28px; min-height: 44px; font-size: 14px; font-weight: 600; }"
+            "QPushButton:hover { background-color: #2a1530; border-color: #e060a0; color: #ff80c0; }"
+            "QPushButton:pressed { background-color: #3a1840; }"
+        )
         self._stop_btn.clicked.connect(self._stop_sharing)
 
-        lay.addLayout(badge_row)
+        right_col.addWidget(hint)
+        right_col.addWidget(self._speed_badge)
+        right_col.addWidget(self._sent_badge)
+        right_col.addStretch()
+        right_col.addWidget(self._stop_btn)
+
+        content_row.addWidget(qr_frame)
+        content_row.addLayout(right_col, stretch=1)
+
         lay.addLayout(url_row)
-        lay.addWidget(hint)
-        lay.addLayout(qr_row)
-        lay.addLayout(stats_row)
-        lay.addWidget(self._stop_btn)
+        lay.addLayout(content_row)
         return card
 
     # ── Slots ──────────────────────────────────────────────────────────────
 
-    def _on_file_chosen(self, path: str):
-        self._file_path = path
-        self._ftype_icon.setText(_file_icon(path))
-        self._fname_lbl.setText(os.path.basename(path))
-        self._fsize_lbl.setText(human_size(os.path.getsize(path)))
-        self._drop_zone.hide()
-        self._file_card.show()
-        self._action_btn.setEnabled(True)
+    def _on_files_chosen(self, paths: list):
+        for p in paths:
+            if p not in self._files:
+                self._files.append(p)
+                self._add_file_row(p)
+        if self._files:
+            last_dir = os.path.dirname(paths[-1])
+            self._settings.setValue("sender/last_dir", last_dir)
+            self._drop_zone.hide()
+            self._file_list_card.show()
+            self._action_btn.setEnabled(True)
+            self._action_btn.setText("⬆  Share Files" if len(self._files) > 1 else "⬆  Share File")
 
-    def _change_file(self):
-        self._stop_sharing()
-        self._drop_zone.show()
-        self._file_card.hide()
-        self._share_card.hide()
-        self._action_btn.setEnabled(False)
-        self._action_btn.setText("🚀   Start Sharing")
-        self._action_btn.setObjectName("actionBtn")
-        self._action_btn.setStyleSheet("")
-        self._file_path = ""
+    def _browse_files(self):
+        last_dir = self._settings.value("sender/last_dir", os.path.expanduser("~"))
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select files to share", last_dir)
+        if paths:
+            self._on_files_chosen(paths)
+
+    def _add_more_files(self):
+        last_dir = self._settings.value("sender/last_dir", os.path.expanduser("~"))
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select files to share", last_dir)
+        if paths:
+            self._on_files_chosen(paths)
 
     def _toggle_sharing(self):
         if self._sharing:
@@ -362,10 +435,10 @@ class SenderPanel(QWidget):
 
     def _start_sharing(self):
         self._sharing = True
-        self._action_btn.setEnabled(False)
+        self._action_btn.hide()
         self._status_lbl.setText("")
 
-        file_server.set_file(self._file_path)
+        file_server.set_files(self._files)
         file_server.start()
 
         self._loading_card.start("Starting tunnel (first time may take 20 s)…")
@@ -388,8 +461,9 @@ class SenderPanel(QWidget):
         self._loading_card.stop()
         self._loading_card.hide()
         self._share_card.hide()
-        self._action_btn.setEnabled(bool(self._file_path))
-        self._action_btn.setText("🚀   Start Sharing")
+        self._action_btn.show()
+        self._action_btn.setEnabled(bool(self._files))
+        self._action_btn.setText("⬆  Share Files" if len(self._files) > 1 else "⬆  Share File")
         self._status_lbl.setObjectName("statusLabel")
         self._status_lbl.setText("")
 
@@ -398,7 +472,7 @@ class SenderPanel(QWidget):
         self._loading_card.hide()
 
         self._url_edit.setText(url)
-        px = _make_qr_pixmap(url, size=164)
+        px = _make_qr_pixmap(url, size=136)
         self._qr_lbl.setPixmap(px)
 
         self._share_card.show()
@@ -416,8 +490,8 @@ class SenderPanel(QWidget):
         self._sharing = False
         self._loading_card.stop()
         self._loading_card.hide()
-        self._action_btn.setEnabled(bool(self._file_path))
-        self._action_btn.setText("🚀   Start Sharing")
+        self._action_btn.setEnabled(bool(self._files))
+        self._action_btn.setText("⬆  Share Files" if len(self._files) > 1 else "⬆  Share File")
         self._status_lbl.setStyleSheet("color: #f59e0b; font-size: 12px;")
         self._status_lbl.setText(f"⚠  Tunnel error: {err}")
 

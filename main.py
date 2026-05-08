@@ -15,6 +15,17 @@ def main():
     app.setApplicationName("ShareData")
     app.setOrganizationName("ShareData")
 
+    # App icon
+    base = os.path.dirname(os.path.abspath(__file__))
+    if sys.platform == "darwin":
+        icon_path = os.path.join(base, "assets", "icon.icns")
+    elif sys.platform == "win32":
+        icon_path = os.path.join(base, "assets", "icon.ico")
+    else:
+        icon_path = os.path.join(base, "assets", "icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
     # High-DPI support (Qt6 handles this automatically, but be explicit)
     app.setStyle("Fusion")
 

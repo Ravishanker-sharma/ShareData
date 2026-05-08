@@ -112,8 +112,9 @@ class TunnelManager:
                     bufsize=1,
                 )
 
+                proc = self._process
                 url_found = False
-                for line in self._process.stdout:
+                for line in proc.stdout:
                     match = _URL_PATTERN.search(line)
                     if match:
                         self.tunnel_url = match.group(0)
@@ -127,9 +128,9 @@ class TunnelManager:
                     error_cb("Tunnel closed before a URL was assigned. Check your internet connection.")
                     return
 
-                for _ in self._process.stdout:
+                for _ in proc.stdout:
                     pass
-                self._process.wait()
+                proc.wait()
 
             except FileNotFoundError:
                 error_cb("cloudflared binary not found and could not be downloaded.")
