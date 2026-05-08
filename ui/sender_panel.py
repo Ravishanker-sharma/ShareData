@@ -405,10 +405,16 @@ class SenderPanel(QWidget):
     def _on_files_chosen(self, paths: list):
         for p in paths:
             if p not in self._files:
-                self._files.append(p)
-                self._add_file_row(p)
+                try:
+                    # check if accessible
+                    os.path.getsize(p)
+                    self._files.append(p)
+                    self._add_file_row(p)
+                except Exception as e:
+                    # File might be inaccessible, just skip it
+                    pass
         if self._files:
-            last_dir = os.path.dirname(paths[-1])
+            last_dir = os.path.dirname(self._files[-1])
             self._settings.setValue("sender/last_dir", last_dir)
             self._drop_zone.hide()
             self._file_list_card.show()
