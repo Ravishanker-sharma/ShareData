@@ -1,6 +1,12 @@
 import sys
 import os
 
+# Fix for PyInstaller Windows crash when opening file dialogs without a console
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # Ensure project root is on path when running from PyInstaller bundle
 if getattr(sys, "frozen", False):
     sys.path.insert(0, sys._MEIPASS)
