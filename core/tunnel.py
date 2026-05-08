@@ -104,12 +104,21 @@ class TunnelManager:
                 if status_cb:
                     status_cb("Starting tunnel...")
 
-                self._process = subprocess.Popen(
-                    [binary, "tunnel", "--url", f"http://localhost:{port}"],
+                kwargs = dict(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                )
+                if platform.system() == "Windows":
+                    si = subprocess.STARTUPINFO()
+                    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    kwargs["startupinfo"] = si
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+                self._process = subprocess.Popen(
+                    [binary, "tunnel", "--url", f"http://localhost:{port}"],
+                    **kwargs,
                 )
 
                 proc = self._process
