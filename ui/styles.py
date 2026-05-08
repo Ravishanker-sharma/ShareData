@@ -80,35 +80,35 @@ QLineEdit:read-only:focus {
 
 /* ══ Buttons ═══════════════════════════════════════════════════════════════ */
 QPushButton#actionBtn {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #6c63ff, stop:1 #8b5cf6);
+    background-color: #6c63ff;
     color: #ffffff;
-    border: none;
+    border: 1.5px solid #8b5cf6;
     border-radius: 12px;
-    padding: 14px 28px;
+    padding: 12px 28px;
+    min-height: 44px;
     font-size: 14px;
     font-weight: 600;
-    letter-spacing: 0.3px;
 }
 QPushButton#actionBtn:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #7c73ff, stop:1 #9b6cf6);
+    background-color: #7c73ff;
+    border-color: #a78bfa;
 }
 QPushButton#actionBtn:pressed {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #5c53ef, stop:1 #7b4ce6);
+    background-color: #5a52e0;
 }
 QPushButton#actionBtn:disabled {
-    background: #1e1e30;
+    background-color: #1e1e30;
+    border-color: #2a2a45;
     color: #3a3a60;
 }
 
 QPushButton#stopBtn {
     background-color: #1e1224;
     color: #e060a0;
-    border: 1.5px solid #e060a040;
+    border: 1.5px solid #e060a070;
     border-radius: 12px;
     padding: 12px 28px;
+    min-height: 44px;
     font-size: 14px;
     font-weight: 600;
 }
@@ -116,6 +116,9 @@ QPushButton#stopBtn:hover {
     background-color: #2a1530;
     border-color: #e060a0;
     color: #ff80c0;
+}
+QPushButton#stopBtn:pressed {
+    background-color: #3a1840;
 }
 
 QPushButton#secondaryBtn {
